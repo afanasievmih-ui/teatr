@@ -1,9 +1,0 @@
-# /etc/systemd/system/teatr-pull.service — подтянуть новые материалы из GitHub (запускает teatr-pull.timer)
-[Unit]
-Description=Teatr: git pull материалов
-
-[Service]
-Type=oneshot
-WorkingDirectory=/opt/teatr
-ExecStart=/usr/bin/git pull --ff-only --quiet
-User=teatr

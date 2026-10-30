@@ -1,0 +1,10 @@
+# /etc/systemd/system/teatr-update.timer — раз в 5 минут
+[Unit]
+Description=Teatr: обновление из GitHub каждые 5 минут
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

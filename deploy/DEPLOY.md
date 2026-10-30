@@ -1,8 +1,8 @@
 # Деплой на сервер (Hetzner) — teatr.idealcontinent.org
 
 Всё как у proverka.idealcontinent.org: тот же сервер, тот же nginx, свой поддомен и порт 8091.
-Отличие одно: материалы лежат в репозитории (`content/`), и сервер сам подтягивает их `git pull` раз в 5 минут.
-Новый материал = коммит в `content/`, перезапуск не нужен.
+Сервер сам проверяет GitHub раз в 5 минут: новые материалы (`content/`) появляются сразу,
+при изменении кода сайт перезапускается сам. Публикация = коммит и push, на сервер заходить не нужно.
 
 ## 1. DNS
 
@@ -40,7 +40,6 @@ chmod 600 .env
 **Вариант A — Docker:**
 
 ```bash
-sudo useradd -r -s /usr/sbin/nologin teatr && sudo chown -R teatr /opt/teatr   # для таймера git pull
 docker compose up -d --build
 curl -s localhost:8091/healthz      # {"ok":true}
 ```
@@ -56,17 +55,17 @@ sudo systemctl daemon-reload && sudo systemctl enable --now teatr
 curl -s localhost:8091/healthz
 ```
 
-**Автообновление материалов (оба варианта):**
+**Автообновление из GitHub (оба варианта):**
 
 ```bash
-sudo cp deploy/teatr-pull.service deploy/teatr-pull.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now teatr-pull.timer
-sudo -u teatr git -C /opt/teatr config --global --add safe.directory /opt/teatr
-systemctl list-timers teatr-pull.timer
+sudo cp deploy/teatr-update.service deploy/teatr-update.timer /etc/systemd/system/
+# без Docker: в teatr-update.service заменить команду перезапуска на "systemctl restart teatr"
+sudo systemctl daemon-reload && sudo systemctl enable --now teatr-update.timer
+sudo systemctl start teatr-update.service && journalctl -u teatr-update -n 5   # проверка
 ```
 
-Таймер обновляет только файлы. Если в коммите поменялся сам сайт (`app/`), перезапустить:
-`docker compose up -d --build` или `sudo systemctl restart teatr`.
+Тот же `autoupdate.sh` подходит для любого сайта (например, proverka): скопировать пару service/timer,
+поменять папку и команду перезапуска. Для приватного репозитория на сервере нужен deploy key.
 
 ## 4. nginx + HTTPS
 
