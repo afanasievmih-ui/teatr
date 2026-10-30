@@ -1,0 +1,10 @@
+services:
+  teatr:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+      - ./content:/srv/content:ro   # git pull на хосте сразу виден сайту
+    ports:
+      - "127.0.0.1:8091:8000"   # наружу только через nginx

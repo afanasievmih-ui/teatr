@@ -1,0 +1,15 @@
+# Вариант без Docker: /etc/systemd/system/teatr.service
+[Unit]
+Description=Teatr (материалы театрального фестиваля)
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/teatr
+EnvironmentFile=/opt/teatr/.env
+Environment=DATA_DIR=/opt/teatr/data
+ExecStart=/opt/teatr/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8091 --proxy-headers
+Restart=always
+User=teatr
+
+[Install]
+WantedBy=multi-user.target
