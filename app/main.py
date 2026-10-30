@@ -6,7 +6,8 @@
   <раздел>/_title.txt              — название раздела (иначе имя папки)
 Заголовок материала — первая строка «# …». Файлы читаются при каждом запросе, перезапуск не нужен.
 
-Вход: пароль (TEATR_PASSWORD) или ссылка /k/<TEATR_LINK_KEY>; после входа кука на год.
+Вход: по умолчанию сайт открыт всем. Если задать пароль (TEATR_PASSWORD) или ссылку /k/<TEATR_LINK_KEY>,
+сайт закрывается, после входа кука на год.
 Загрузка для Claude: заголовок Authorization: Bearer <TEATR_API_TOKEN>.
 """
 import hashlib, hmac, html, os, re
@@ -26,6 +27,7 @@ LINK_KEY = os.environ.get('TEATR_LINK_KEY', '')
 API_TOKEN = os.environ.get('TEATR_API_TOKEN', '')
 SECRET = os.environ.get('TEATR_SECRET') or hashlib.sha256((PASSWORD + LINK_KEY + API_TOKEN).encode()).hexdigest()
 COOKIE = 'teatr'
+OPEN = not PASSWORD and not LINK_KEY
 SECURE_COOKIE = os.environ.get('TEATR_SECURE_COOKIE', '1') == '1'
 ID_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
 MAX_MD = 2 * 1024 * 1024
@@ -43,7 +45,7 @@ def is_api(req: Request):
 
 def is_reader(req: Request):
     c = req.cookies.get(COOKIE, '')
-    return (c and hmac.compare_digest(c, session_value())) or is_api(req)
+    return OPEN or (c and hmac.compare_digest(c, session_value())) or is_api(req)
 
 def need_api(req: Request):
     if not is_api(req): raise HTTPException(401, 'Нужен API-токен')
@@ -170,7 +172,7 @@ def index():
         parts.append(f'<div class="sec"><h2>{html.escape(section_title(sec))}</h2>{links}</div>')
     body = f'<h1>{SITE}</h1><p class="muted">Подборки текстов и готовые сцены. Любую страницу можно распечатать.</p>' + \
            (''.join(parts) or '<p class="muted">Пока нет ни одного материала.</p>') + \
-           '<p class="muted noprint"><a href="/logout" style="color:inherit">Выйти</a></p>'
+           ('' if OPEN else '<p class="muted noprint"><a href="/logout" style="color:inherit">Выйти</a></p>')
     return PAGE.format(title=SITE, body=body)
 
 def render(text: str):

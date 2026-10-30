@@ -25,11 +25,11 @@ cp .env.example .env
 python3 - <<'PY'   # сгенерировать секреты в .env
 import secrets, re
 s = open('.env').read()
-for k in ['TEATR_LINK_KEY', 'TEATR_API_TOKEN', 'TEATR_SECRET']:
+for k in ['TEATR_API_TOKEN', 'TEATR_SECRET']:
     s = re.sub(rf'^{k}=.*$', f'{k}={secrets.token_urlsafe(24)}', s, flags=re.M)
 open('.env', 'w').write(s)
 PY
-nano .env      # вписать свой TEATR_PASSWORD
+# по умолчанию сайт открыт без пароля; закрыть: вписать TEATR_PASSWORD в .env
 chmod 600 .env
 ```
 
@@ -79,8 +79,8 @@ sudo certbot --nginx -d teatr.idealcontinent.org
 
 ## 5. Проверка
 
-- https://teatr.idealcontinent.org → форма входа → пароль из `.env` → оглавление.
-- Ссылка для входа без пароля (для актрис и коллег): `https://teatr.idealcontinent.org/k/<TEATR_LINK_KEY>`.
-  Кука живёт год. Сменить ключ в `.env` и перезапустить = старые ссылки перестают работать.
+- https://teatr.idealcontinent.org → сразу оглавление.
+- Если понадобится закрыть сайт: вписать в `.env` `TEATR_PASSWORD` (вход по паролю) и/или `TEATR_LINK_KEY`
+  (вход по ссылке `/k/<ключ>`, кука на год) и перезапустить.
 
 Данные, загруженные через API, лежат в `/opt/teatr/data`, git их не трогает.
