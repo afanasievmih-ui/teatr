@@ -59,7 +59,8 @@ curl -s localhost:8091/healthz
 
 ```bash
 sudo cp deploy/teatr-update.service deploy/teatr-update.timer /etc/systemd/system/
-# без Docker: в teatr-update.service заменить команду перезапуска на "systemctl restart teatr"
+# без Docker: в teatr-update.service заменить команду перезапуска на
+# "/opt/teatr/.venv/bin/pip install -q -r /opt/teatr/requirements.txt && systemctl restart teatr"
 sudo systemctl daemon-reload && sudo systemctl enable --now teatr-update.timer
 sudo systemctl start teatr-update.service && journalctl -u teatr-update -n 5   # проверка
 ```

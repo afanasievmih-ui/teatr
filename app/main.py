@@ -11,16 +11,20 @@
 Загрузка для Claude: заголовок Authorization: Bearer <TEATR_API_TOKEN>.
 """
 import hashlib, hmac, html, os, re
+from urllib.parse import quote
 from datetime import datetime, timezone
 from pathlib import Path
 
 import markdown
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
+from fpdf import FPDF, TextStyle
 
 HERE = Path(__file__).parent
 CONTENT = Path(os.environ.get('CONTENT_DIR', HERE.parent / 'content'))
 DATA = Path(os.environ.get('DATA_DIR', HERE.parent / 'data'))
+PDF_CACHE = DATA / '_pdf'
+FONTS = HERE / 'fonts'
 
 PASSWORD = os.environ.get('TEATR_PASSWORD', '')
 LINK_KEY = os.environ.get('TEATR_LINK_KEY', '')
@@ -199,6 +203,42 @@ def material_md(sec: str, mid: str):
     return PlainTextResponse(p.read_text('utf-8'), media_type='text/markdown; charset=utf-8')
 
 
+def make_pdf(text: str, dst: Path):
+    """Markdown → PDF (A4, Liberation Serif с кириллицей). Оглавление не нужно: в PDF есть закладки по заголовкам."""
+    pdf = FPDF(format='A4')
+    pdf.set_margins(18, 16, 18); pdf.set_auto_page_break(True, 16)
+    for style, f in (('', 'Regular'), ('B', 'Bold'), ('I', 'Italic'), ('BI', 'BoldItalic')):
+        pdf.add_font('Serif', style, FONTS / f'LiberationSerif-{f}.ttf')
+    pdf.add_font('Sym', '', FONTS / 'DejaVuSans.ttf'); pdf.set_fallback_fonts(['Sym'], exact_match=False)
+    pdf.set_font('Serif', size=12)
+    pdf.set_title(title_of(text, dst.stem))
+    pdf.add_page()
+    body, _ = render(text)
+    body = re.sub(r'<(/?)(nav|article|div|span)[^>]*>', '', body)
+    body = re.sub(r'<a [^>]*>(.*?)</a>', r'\1', body, flags=re.S)  # ссылки на бумаге не нужны
+    body = re.sub(r'>\s*\n\s*<', '><', body)  # переводы строк между тегами fpdf превращает в пустые строки
+    pdf.write_html(body, font_family='Serif', tag_styles={
+        'h1': TextStyle(font_family='Serif', font_style='B', font_size_pt=20, color=0, t_margin=0, b_margin=2),
+        'h2': TextStyle(font_family='Serif', font_style='B', font_size_pt=16, color=(156, 31, 46), t_margin=4, b_margin=1),
+        'h3': TextStyle(font_family='Serif', font_style='B', font_size_pt=13.5, color=0, t_margin=3, b_margin=1.5)})
+    tmp = dst.with_suffix('.tmp'); pdf.output(str(tmp)); tmp.replace(dst)
+
+@app.get('/m/{sec}/{mid}.pdf')
+def material_pdf(sec: str, mid: str):
+    check_id(sec, mid)
+    p = find(sec, mid + '.md')
+    if not p: raise HTTPException(404)
+    text = p.read_text('utf-8')
+    key = hashlib.sha256(text.encode()).hexdigest()[:16]
+    PDF_CACHE.mkdir(parents=True, exist_ok=True)
+    dst = PDF_CACHE / f'{sec}--{mid}--{key}.pdf'
+    if not dst.exists():
+        for old in PDF_CACHE.glob(f'{sec}--{mid}--*.pdf'): old.unlink()
+        make_pdf(text, dst)
+    name = re.sub(r'[\\/:*?"<>|«»]+', '', title_of(text, mid)).strip()[:120] or mid
+    return FileResponse(dst, media_type='application/pdf',
+                        headers={'Content-Disposition': f"attachment; filename=\"{mid}.pdf\"; filename*=UTF-8''{quote(name + '.pdf')}"})
+
 @app.get('/m/{sec}/{mid}', response_class=HTMLResponse)
 def material(sec: str, mid: str):
     check_id(sec, mid)
@@ -207,7 +247,7 @@ def material(sec: str, mid: str):
     text = p.read_text('utf-8')
     body_html, tokens = render(text)
     top = (f'<div class="top noprint"><a href="/">← Все материалы</a>'
-           f'<span><a href="/m/{sec}/{mid}.md" download>Скачать .md</a> &nbsp; '
+           f'<span><a href="/m/{sec}/{mid}.pdf">Скачать PDF</a> &nbsp; <a href="/m/{sec}/{mid}.md" download>.md</a> &nbsp; '
            f'<button class="btn" onclick="print()">Печать</button></span></div>')
     return PAGE.format(title=html.escape(title_of(text, mid)),
                        body=f'{top}<div class="muted noprint">{html.escape(section_title(sec))} · обновлено {fmt_date(p.stat().st_mtime)}</div>'
