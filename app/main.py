@@ -162,7 +162,7 @@ def all_materials():
     secs = {}
     for (sec, mid), p in sorted(found.items()):
         secs.setdefault(sec, []).append((mid, title_of(p.read_text('utf-8'), mid), p.stat().st_mtime))
-    return dict(sorted(secs.items(), key=lambda kv: -max(t for *_, t in kv[1])))
+    return dict(sorted(secs.items()))
 
 def fmt_date(ts: float):
     return datetime.fromtimestamp(ts, timezone.utc).strftime('%d.%m.%Y')
