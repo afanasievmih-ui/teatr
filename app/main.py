@@ -195,11 +195,34 @@ def toc_html(tokens):
     flat = [c for t in tokens for c in (t['children'] if t['level'] == 1 else [t])]
     return f'<nav class="toc noprint"><b>Содержание</b>{ul(flat)}</nav>' if len(flat) > 1 else ''
 
+# Старые адреса материалов (до разделения на «Готовые сцены» и «Предложения»), чтобы разосланные ссылки работали.
+MOVED = {
+    ('scena-devushki', '01-lorka-dom-bernardy-alby'): ('1-gotovye-sceny', '1-lorka-dom-bernardy-alby'),
+    ('scena-devushki', '05-lus-dzhentlmeny-blondinki'): ('1-gotovye-sceny', '2-lus-dzhentlmeny-blondinki'),
+    ('scena-devushki', '06-aristofan-zhenshchiny-v-sobranii'): ('1-gotovye-sceny', '3-aristofan-zhenshchiny-v-sobranii'),
+    ('scena-devushki', '02-varianty-tekstov'): ('2-predlozheniya', '1-sceny-dlya-devushek'),
+    ('slugi-i-hozyaeva', 'varianty-scen'): ('2-predlozheniya', '2-slugi-i-hozyaeva'),
+    ('bolshoy-pul', '1-vybor'): ('2-predlozheniya', '3-vybor'),
+    ('bolshoy-pul', '2-russkaya-proza'): ('2-predlozheniya', '4-russkaya-proza'),
+    ('bolshoy-pul', '3-russkaya-dramaturgiya'): ('2-predlozheniya', '5-russkaya-dramaturgiya'),
+    ('bolshoy-pul', '4-mirovaya-dramaturgiya'): ('2-predlozheniya', '6-mirovaya-dramaturgiya'),
+    ('bolshoy-pul', '5-mirovaya-proza'): ('2-predlozheniya', '7-mirovaya-proza'),
+}
+
+def not_found(sec: str, mid: str, ext: str = ''):
+    """Переехавший материал → постоянный редирект на новый адрес; удалённый → на главную (для страницы) или 404."""
+    if (sec, mid) in MOVED:
+        s, m = MOVED[sec, mid]
+        return RedirectResponse(f'/m/{s}/{m}{ext}', 301)
+    if not ext:
+        return RedirectResponse('/', 303)
+    raise HTTPException(404)
+
 @app.get('/m/{sec}/{mid}.md')
 def material_md(sec: str, mid: str):
     check_id(sec, mid)
     p = find(sec, mid + '.md')
-    if not p: raise HTTPException(404)
+    if not p: return not_found(sec, mid, '.md')
     return PlainTextResponse(p.read_text('utf-8'), media_type='text/markdown; charset=utf-8')
 
 
@@ -227,7 +250,7 @@ def make_pdf(text: str, dst: Path):
 def material_pdf(sec: str, mid: str):
     check_id(sec, mid)
     p = find(sec, mid + '.md')
-    if not p: raise HTTPException(404)
+    if not p: return not_found(sec, mid, '.pdf')
     text = p.read_text('utf-8')
     key = hashlib.sha256(text.encode()).hexdigest()[:16]
     PDF_CACHE.mkdir(parents=True, exist_ok=True)
@@ -243,7 +266,7 @@ def material_pdf(sec: str, mid: str):
 def material(sec: str, mid: str):
     check_id(sec, mid)
     p = find(sec, mid + '.md')
-    if not p: raise HTTPException(404, 'Нет такого материала')
+    if not p: return not_found(sec, mid)
     text = p.read_text('utf-8')
     body_html, tokens = render(text)
     top = (f'<div class="top noprint"><a href="/">← Все материалы</a>'
