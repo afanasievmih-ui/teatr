@@ -180,7 +180,7 @@ def index():
     return PAGE.format(title=SITE, body=body)
 
 def render(text: str):
-    md = markdown.Markdown(extensions=['tables', 'sane_lists', 'toc'],
+    md = markdown.Markdown(extensions=['tables', 'sane_lists', 'toc', 'nl2br'],
                            extension_configs={'toc': {'toc_depth': '2-3', 'slugify': toc_slug}})
     return md.convert(text), md.toc_tokens
 
