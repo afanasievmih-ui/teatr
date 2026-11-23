@@ -84,6 +84,7 @@ article{{background:var(--paper);border:1px solid var(--line);border-radius:12px
 article h1{{font-size:1.6rem;margin:0 0 12px}}article h2{{font-size:1.3rem;margin:28px 0 10px;color:var(--accent)}}article h3{{font-size:1.1rem;margin:20px 0 8px}}
 article table{{border-collapse:collapse;width:100%;display:block;overflow-x:auto}}article td,article th{{border:1px solid var(--line);padding:6px 8px;vertical-align:top}}
 article blockquote{{margin:12px 0;padding:4px 14px;border-left:3px solid var(--accent);background:var(--soft)}}
+details.ext{{margin:14px 0;border-left:3px solid var(--accent);padding:2px 0 2px 14px}}details.ext>summary{{cursor:pointer;color:var(--accent);font:700 .95rem "PT Sans",Arial,sans-serif}}details.ext[open]>summary{{margin-bottom:6px}}.extbar{{background:var(--soft);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.95rem}}.extbar .btn{{padding:6px 12px}}
 article hr{{border:0;border-top:1px solid var(--line);margin:24px 0}}article li{{margin:4px 0}}
 .toc{{background:var(--soft);border-radius:12px;padding:12px 16px;font-size:.95rem}}.toc ul{{margin:4px 0;padding-left:20px}}.toc>ul{{padding-left:4px;list-style:none}}
 form{{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px}}
@@ -93,7 +94,7 @@ form button{{background:var(--accent);color:#fff;border:0;font-weight:700}}.err{
   :root{{--ink:#000;--paper:#fff;--line:#999;--accent:#000;--soft:#fff}}
   body{{background:#fff;font-size:12pt}}.wrap{{max-width:none;padding:0}}.noprint{{display:none!important}}
   article{{border:0;padding:0;font-size:12pt}}article h2,article h3{{break-after:avoid}}article table,article blockquote{{break-inside:avoid}}
-  article a{{color:#000;text-decoration:none}}@page{{margin:18mm 16mm}}
+  article a{{color:#000;text-decoration:none}}details.ext:not([open]){{display:none}}details.ext>summary{{display:none}}details.ext{{border-left:1px solid #999}}@page{{margin:18mm 16mm}}
 }}
 </style></head><body><div class="wrap">{body}</div></body></html>'''
 
@@ -179,6 +180,32 @@ def index():
            ('' if OPEN else '<p class="muted noprint"><a href="/logout" style="color:inherit">Выйти</a></p>')
     return PAGE.format(title=SITE, body=body)
 
+EXT_OPEN = '**▼ Длинная версия'
+EXT_CLOSE = '**▲ Конец вставки**'
+
+def select_ext(text: str, keep: set):
+    """Вставки «длинной версии»: оставить только выбранные (номера с 1), пометки убрать."""
+    out, n, inside, take = [], 0, False, True
+    for line in text.split('\n'):
+        s = line.strip()
+        if s.startswith(EXT_OPEN):
+            n += 1; inside = True; take = n in keep; continue
+        if s == EXT_CLOSE and inside:
+            inside = False; take = True; continue
+        if take: out.append(line)
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out))
+
+def ext_details(body: str):
+    """HTML-вставки длинной версии → сворачиваемые блоки <details>."""
+    n = 0
+    def blk(m):
+        nonlocal n; n += 1
+        return (f'<details class="ext" data-n="{n}"><summary>▸ {m.group(1)}</summary>'
+                f'{m.group(2)}</details>')
+    body = re.sub(r'<p><strong>▼ (Длинная версия[^<]*)</strong></p>(.*?)<p><strong>▲ Конец вставки</strong></p>',
+                  blk, body, flags=re.S)
+    return body, n
+
 def render(text: str):
     md = markdown.Markdown(extensions=['tables', 'sane_lists', 'toc', 'nl2br'],
                            extension_configs={'toc': {'toc_depth': '2-3', 'slugify': toc_slug}})
@@ -247,16 +274,18 @@ def make_pdf(text: str, dst: Path):
     tmp = dst.with_suffix('.tmp'); pdf.output(str(tmp)); tmp.replace(dst)
 
 @app.get('/m/{sec}/{mid}.pdf')
-def material_pdf(sec: str, mid: str):
+def material_pdf(sec: str, mid: str, ext: str = ''):
     check_id(sec, mid)
     p = find(sec, mid + '.md')
     if not p: return not_found(sec, mid, '.pdf')
-    text = p.read_text('utf-8')
+    keep = {int(x) for x in re.findall(r'\d+', ext)[:50]}
+    text = select_ext(p.read_text('utf-8'), keep)
     key = hashlib.sha256(text.encode()).hexdigest()[:16]
     PDF_CACHE.mkdir(parents=True, exist_ok=True)
     dst = PDF_CACHE / f'{sec}--{mid}--{key}.pdf'
     if not dst.exists():
-        for old in PDF_CACHE.glob(f'{sec}--{mid}--*.pdf'): old.unlink()
+        olds = sorted(PDF_CACHE.glob(f'{sec}--{mid}--*.pdf'), key=lambda f: f.stat().st_mtime)
+        for old in olds[:-20]: old.unlink()  # несколько вариантов (короткий, длинный…) держим в кэше
         make_pdf(text, dst)
     name = re.sub(r'[\\/:*?"<>|«»]+', '', title_of(text, mid)).strip()[:120] or mid
     return FileResponse(dst, media_type='application/pdf',
@@ -269,12 +298,20 @@ def material(sec: str, mid: str):
     if not p: return not_found(sec, mid)
     text = p.read_text('utf-8')
     body_html, tokens = render(text)
+    body_html, n_ext = ext_details(body_html)
+    extbar = ('<div class="extbar noprint"><span>Вставки для длинной версии:</span>'
+              '<button class="btn" onclick="extAll(true)">Развернуть все</button>'
+              '<button class="btn" onclick="extAll(false)">Свернуть все</button>'
+              '<span class="muted">Печатается и скачивается в PDF только то, что развёрнуто.</span></div>'
+              '<script>function extAll(o){document.querySelectorAll("details.ext").forEach(d=>d.open=o)}'
+              'function pdfLink(a){var n=[...document.querySelectorAll("details.ext[open]")].map(d=>d.dataset.n);'
+              'a.href=a.dataset.base+(n.length?"?ext="+n.join(","):"");}</script>') if n_ext else ''
     top = (f'<div class="top noprint"><a href="/">← Все материалы</a>'
-           f'<span><a href="/m/{sec}/{mid}.pdf">Скачать PDF</a> &nbsp; <a href="/m/{sec}/{mid}.md" download>.md</a> &nbsp; '
+           f'<span><a href="/m/{sec}/{mid}.pdf" data-base="/m/{sec}/{mid}.pdf" onclick="if(window.pdfLink)pdfLink(this)">Скачать PDF</a> &nbsp; <a href="/m/{sec}/{mid}.md" download>.md</a> &nbsp; '
            f'<button class="btn" onclick="print()">Печать</button></span></div>')
     return PAGE.format(title=html.escape(title_of(text, mid)),
                        body=f'{top}<div class="muted noprint">{html.escape(section_title(sec))} · обновлено {fmt_date(p.stat().st_mtime)}</div>'
-                            f'{toc_html(tokens)}<article>{body_html}</article>')
+                            f'{toc_html(tokens)}{extbar}<article>{body_html}</article>')
 
 # ---------- загрузка (Claude) ----------
 def data_path(sec: str, name: str):
